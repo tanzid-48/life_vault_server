@@ -12,12 +12,40 @@ app.use(
     credentials: true,
   }),
 );
-app.use(
-  cors({
-    origin: process.env.CLIENT_URL,
-    credentials: true,
-  }),
+
+// Stripe webhook — /webhook
+app.post(
+  "/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, secret);
+    } catch (err) {
+      console.error("Webhook error:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const userId = session.metadata?.userId;
+
+      if (userId) {
+        await usersCollection.updateOne(
+          { _id: new ObjectId(userId) },
+          { $set: { isPremium: true, premiumSince: new Date() } },
+        );
+        console.log("✅ Premium activated for:", userId);
+      }
+    }
+
+    res.json({ received: true });
+  },
 );
+
 app.use(express.json());
 
 app.get("/", (req, res) => {
