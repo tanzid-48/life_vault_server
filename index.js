@@ -5,6 +5,8 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const Stripe = require("stripe");
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.use(
   cors({
@@ -12,6 +14,8 @@ app.use(
     credentials: true,
   }),
 );
+
+let usersCollection;
 
 // Stripe webhook — /webhook
 app.post(
@@ -33,7 +37,7 @@ app.post(
       const session = event.data.object;
       const userId = session.metadata?.userId;
 
-      if (userId) {
+      if (userId && usersCollection) {
         await usersCollection.updateOne(
           { _id: new ObjectId(userId) },
           { $set: { isPremium: true, premiumSince: new Date() } },
@@ -68,7 +72,7 @@ async function run() {
 
     const db = client.db("life_vault_db");
 
-    const usersCollection = db.collection("user");
+    usersCollection = db.collection("user");
     const sessionCollection = db.collection("session");
 
     const lessonsCollection = db.collection("lessons");
@@ -101,7 +105,7 @@ async function run() {
         return res.status(403).json({ message: "Forbidden" });
       next();
     };
-     
+
     //user/premium
     app.patch("/users/:id/premium", async (req, res) => {
       try {
