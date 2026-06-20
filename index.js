@@ -101,6 +101,20 @@ async function run() {
         return res.status(403).json({ message: "Forbidden" });
       next();
     };
+     
+    //user/premium
+    app.patch("/users/:id/premium", async (req, res) => {
+      try {
+        const { isPremium } = req.body;
+        await usersCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { isPremium, premiumSince: isPremium ? new Date() : null } },
+        );
+        res.json({ success: true });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
 
     // ── LESSONS
 
