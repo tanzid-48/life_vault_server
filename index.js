@@ -260,6 +260,28 @@ async function run() {
       }
     });
 
+    // DELETE /lessons/:id — owner or admin
+    app.delete("/lessons/:id", verifyToken, async (req, res) => {
+      try {
+        const lesson = await lessonsCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+        if (!lesson) return res.status(404).json({ message: "Not found" });
+
+        const isOwner = lesson.userId === req.user._id.toString();
+        const isAdmin = req.user.role === "admin";
+
+        if (!isOwner && !isAdmin) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+
+        await lessonsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+        res.json({ success: true });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
     // POST /lessons/:id/like — increment-only (auth)
 
     app.post("/lessons/:id/like", verifyToken, async (req, res) => {
