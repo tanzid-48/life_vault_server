@@ -260,6 +260,30 @@ async function run() {
       }
     });
 
+    // PATCH /lessons/:id — update (owner only)
+    app.patch("/lessons/:id", verifyToken, async (req, res) => {
+      try {
+        const lesson = await lessonsCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+        if (!lesson) return res.status(404).json({ message: "Not found" });
+
+        // Only owner can update
+        if (lesson.userId !== req.user._id.toString()) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+
+        const result = await lessonsCollection.findOneAndUpdate(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { ...req.body, updatedAt: new Date() } },
+          { returnDocument: "after" },
+        );
+        res.json({ success: true, lesson: result });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
     // DELETE /lessons/:id — owner or admin
     app.delete("/lessons/:id", verifyToken, async (req, res) => {
       try {
