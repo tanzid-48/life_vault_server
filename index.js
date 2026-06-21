@@ -179,6 +179,7 @@ async function run() {
     });
 
     // GET /lessons — paginated + filter
+
     app.get("/lessons", async (req, res) => {
       try {
         const {
@@ -205,6 +206,55 @@ async function run() {
           ];
         }
 
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.max(1, parseInt(limit));
+        const skip = (pageNum - 1) * limitNum;
+
+        // sort=mostSaved — favorites collection
+        if (sort === "mostSaved") {
+          const basePipeline = [
+            { $match: query },
+            { $addFields: { idStr: { $toString: "$_id" } } },
+            {
+              $lookup: {
+                from: "favorites",
+                localField: "idStr",
+                foreignField: "lessonId",
+                as: "favoritesArr",
+              },
+            },
+            { $addFields: { favoritesCount: { $size: "$favoritesArr" } } },
+            { $project: { favoritesArr: 0, idStr: 0 } },
+            { $sort: { favoritesCount: -1 } },
+          ];
+
+          const [lessons, countResult] = await Promise.all([
+            lessonsCollection
+              .aggregate([
+                ...basePipeline,
+                { $skip: skip },
+                { $limit: limitNum },
+              ])
+              .toArray(),
+            lessonsCollection
+              .aggregate([{ $match: query }, { $count: "total" }])
+              .toArray(),
+          ]);
+
+          const total = countResult[0]?.total ?? 0;
+
+          if (page) {
+            return res.json({
+              lessons,
+              total,
+              totalPages: Math.ceil(total / limitNum),
+              page: pageNum,
+            });
+          }
+          return res.json(lessons);
+        }
+
+        // ── newest / oldest / popular
         const sortObj =
           sort === "popular"
             ? { views: -1 }
@@ -213,10 +263,6 @@ async function run() {
               : { createdAt: -1 };
 
         if (page) {
-          const pageNum = Math.max(1, parseInt(page));
-          const limitNum = Math.max(1, parseInt(limit));
-          const skip = (pageNum - 1) * limitNum;
-
           const [lessons, total] = await Promise.all([
             lessonsCollection
               .find(query)
