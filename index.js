@@ -749,7 +749,75 @@ async function run() {
       },
     );
 
-  
+    // GET /admin/stats — dashboard analytics
+    app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const now = new Date();
+        const today = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+        );
+
+        const [
+          totalUsers,
+          totalLessons,
+          publicLessons,
+          privateLessons,
+          reportedLessons,
+          todayLessons,
+        ] = await Promise.all([
+          usersCollection.countDocuments({}),
+          lessonsCollection.countDocuments({}),
+          lessonsCollection.countDocuments({ isPublic: true }),
+          lessonsCollection.countDocuments({ isPublic: false }),
+          reportsCollection.distinct("lessonId"),
+          lessonsCollection.countDocuments({ createdAt: { $gte: today } }),
+        ]);
+
+        // top contributors (most lessons)
+        const topContributors = await lessonsCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$userId",
+                count: { $sum: 1 },
+                userName: { $first: "$userName" },
+                userAvatar: { $first: "$userAvatar" },
+              },
+            },
+            { $sort: { count: -1 } },
+            { $limit: 5 },
+          ])
+          .toArray();
+
+        // last 7 days lesson counts
+        const weeklyData = await Promise.all(
+          Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(today);
+            d.setDate(d.getDate() - (6 - i));
+            const next = new Date(d);
+            next.setDate(next.getDate() + 1);
+            return lessonsCollection.countDocuments({
+              createdAt: { $gte: d, $lt: next },
+            });
+          }),
+        );
+
+        res.json({
+          totalUsers,
+          totalLessons,
+          publicLessons,
+          privateLessons,
+          reportedCount: reportedLessons.length,
+          todayLessons,
+          topContributors,
+          weeklyData,
+        });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
