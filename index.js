@@ -219,6 +219,39 @@ async function run() {
       }
     });
 
+    // GET /lessons/most-saved
+    app.get("/lessons/most-saved", async (req, res) => {
+      try {
+        // favorites collection
+        const topFavs = await favoritesCollection
+          .aggregate([
+            { $group: { _id: "$lessonId", saveCount: { $sum: 1 } } },
+            { $sort: { saveCount: -1 } },
+            { $limit: 6 },
+          ])
+          .toArray();
+
+        const lessons = await Promise.all(
+          topFavs.map(async (f) => {
+            try {
+              const lesson = await lessonsCollection.findOne({
+                _id: new ObjectId(f._id),
+                isPublic: true,
+              });
+              if (!lesson) return null;
+              return { ...lesson, saveCount: f.saveCount };
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        res.json(lessons.filter(Boolean));
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
     // GET /lessons/:id
     app.get("/lessons/:id", async (req, res) => {
       try {
