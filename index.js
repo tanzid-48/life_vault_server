@@ -519,7 +519,174 @@ async function run() {
       }
     });
 
-    // ── ADMIN
+    // ── ADMIN ROUTES
+
+    // GET /admin/users — all users with lesson count
+    app.get("/admin/users", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const users = await usersCollection.find({}).toArray();
+        // each user  lesson count
+        const usersWithCount = await Promise.all(
+          users.map(async (u) => {
+            const count = await lessonsCollection.countDocuments({
+              userId: u._id.toString(),
+            });
+            return { ...u, lessonCount: count };
+          }),
+        );
+        res.json(usersWithCount);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // PATCH /admin/users/:id/role
+    app.patch(
+      "/admin/users/:id/role",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { role } = req.body;
+          if (!["user", "admin"].includes(role))
+            return res.status(400).json({ message: "Invalid role" });
+          await usersCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { role, updatedAt: new Date() } },
+          );
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
+
+    // PATCH /admin/users/:id/suspend
+    app.patch(
+      "/admin/users/:id/suspend",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { suspended } = req.body;
+          await usersCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { suspended, updatedAt: new Date() } },
+          );
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
+
+    // DELETE /admin/users/:id
+    app.delete(
+      "/admin/users/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+          await lessonsCollection.deleteMany({ userId: req.params.id });
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
+
+    // GET /admin/lessons — all lessons + report count
+    app.get("/admin/lessons", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const { category, accessLevel, isPublic, search } = req.query;
+        const query = {};
+        if (category) query.category = category;
+        if (accessLevel) query.accessLevel = accessLevel;
+        if (isPublic !== undefined) query.isPublic = isPublic === "true";
+        if (search) {
+          query.$or = [
+            { title: { $regex: search, $options: "i" } },
+            { userName: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        const lessons = await lessonsCollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        // each lesson report count
+        const withReports = await Promise.all(
+          lessons.map(async (l) => {
+            const id = l._id.toString();
+            const reportCount = await reportsCollection.countDocuments({
+              lessonId: id,
+            });
+            return { ...l, reportCount };
+          }),
+        );
+        res.json(withReports);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // PATCH /admin/lessons/:id/feature
+    app.patch(
+      "/admin/lessons/:id/feature",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { featured } = req.body;
+          await lessonsCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { featured, updatedAt: new Date() } },
+          );
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
+
+    // PATCH /admin/lessons/:id/reviewed
+    app.patch(
+      "/admin/lessons/:id/reviewed",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          await lessonsCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { reviewed: true, reviewedAt: new Date() } },
+          );
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
+
+    // DELETE /admin/lessons/:id
+    app.delete(
+      "/admin/lessons/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          await lessonsCollection.deleteOne({
+            _id: new ObjectId(req.params.id),
+          });
+          // related reports ও clear
+          await reportsCollection.deleteMany({ lessonId: req.params.id });
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
 
     await client.db("admin").command({ ping: 1 });
     console.log(
