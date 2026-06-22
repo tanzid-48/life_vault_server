@@ -178,6 +178,33 @@ async function run() {
       }
     });
 
+    // GET /lessons/featured
+    app.get("/lessons/featured", async (req, res) => {
+      try {
+        const lessons = await lessonsCollection
+          .find({ featured: true, isPublic: true })
+          .sort({ createdAt: -1 })
+          .limit(6)
+          .toArray();
+        res.json(lessons);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // GET /lessons/:id
+    app.get("/lessons/:id", async (req, res) => {
+      try {
+        const lesson = await lessonsCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+        if (!lesson)
+          return res.status(404).json({ message: "Lesson not found" });
+        res.json(lesson);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
     // GET /lessons — paginated + filter
 
     app.get("/lessons", async (req, res) => {
@@ -288,20 +315,6 @@ async function run() {
         res.json(lessons);
       } catch (err) {
         console.error(err);
-        res.status(500).json({ message: "Server error" });
-      }
-    });
-
-    // GET /lessons/:id
-    app.get("/lessons/:id", async (req, res) => {
-      try {
-        const lesson = await lessonsCollection.findOne({
-          _id: new ObjectId(req.params.id),
-        });
-        if (!lesson)
-          return res.status(404).json({ message: "Lesson not found" });
-        res.json(lesson);
-      } catch {
         res.status(500).json({ message: "Server error" });
       }
     });
@@ -518,14 +531,13 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
-
     // ── ADMIN ROUTES
 
     // GET /admin/users — all users with lesson count
     app.get("/admin/users", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const users = await usersCollection.find({}).toArray();
-        // each user  lesson count
+        // each user
         const usersWithCount = await Promise.all(
           users.map(async (u) => {
             const count = await lessonsCollection.countDocuments({
@@ -588,6 +600,7 @@ async function run() {
       async (req, res) => {
         try {
           await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+          // তার lessons
           await lessonsCollection.deleteMany({ userId: req.params.id });
           res.json({ success: true });
         } catch {
@@ -616,7 +629,7 @@ async function run() {
           .sort({ createdAt: -1 })
           .toArray();
 
-        // each lesson report count
+        // each lesson
         const withReports = await Promise.all(
           lessons.map(async (l) => {
             const id = l._id.toString();
@@ -679,7 +692,7 @@ async function run() {
           await lessonsCollection.deleteOne({
             _id: new ObjectId(req.params.id),
           });
-          // related reports ও clear
+          // related reports
           await reportsCollection.deleteMany({ lessonId: req.params.id });
           res.json({ success: true });
         } catch {
@@ -758,7 +771,6 @@ async function run() {
           now.getMonth(),
           now.getDate(),
         );
-
         const [
           totalUsers,
           totalLessons,
@@ -771,7 +783,9 @@ async function run() {
           lessonsCollection.countDocuments({}),
           lessonsCollection.countDocuments({ isPublic: true }),
           lessonsCollection.countDocuments({ isPublic: false }),
-          reportsCollection.distinct("lessonId"),
+          reportsCollection
+            .aggregate([{ $group: { _id: "$lessonId" } }])
+            .toArray(),
           lessonsCollection.countDocuments({ createdAt: { $gte: today } }),
         ]);
 
