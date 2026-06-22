@@ -688,6 +688,69 @@ async function run() {
       },
     );
 
+    // GET /admin/reports — all reports grouped by lessonId
+    app.get("/admin/reports", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const reports = await reportsCollection
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        // group by lessonId
+        const grouped = {};
+        for (const r of reports) {
+          if (!grouped[r.lessonId]) grouped[r.lessonId] = [];
+          grouped[r.lessonId].push(r);
+        }
+
+        // lesson info
+        const result = await Promise.all(
+          Object.entries(grouped).map(async ([lessonId, reps]) => {
+            let lesson = null;
+            try {
+              lesson = await lessonsCollection.findOne({
+                _id: new ObjectId(lessonId),
+              });
+            } catch {}
+            return {
+              lessonId,
+              lessonTitle: lesson?.title || "Deleted Lesson",
+              lessonAuthor: lesson?.userName || "Unknown",
+              reportCount: reps.length,
+              reports: reps,
+              resolved: reps.every((r) => r.resolved),
+            };
+          }),
+        );
+
+        // unresolved
+        result.sort((a, b) => (a.resolved ? 1 : -1));
+        res.json(result);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // PATCH /admin/reports/resolve/:lessonId — clear all reports for a lesson
+    app.patch(
+      "/admin/reports/resolve/:lessonId",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          await reportsCollection.updateMany(
+            { lessonId: req.params.lessonId },
+            { $set: { resolved: true, resolvedAt: new Date() } },
+          );
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
+
+  
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
