@@ -191,6 +191,33 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
+    // GET /users/top-contributors
+    app.get("/users/top-contributors", async (req, res) => {
+      try {
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+        const top = await lessonsCollection
+          .aggregate([
+            { $match: { isPublic: true, createdAt: { $gte: oneWeekAgo } } },
+            {
+              $group: {
+                _id: "$userId",
+                count: { $sum: 1 },
+                userName: { $first: "$userName" },
+                userAvatar: { $first: "$userAvatar" },
+              },
+            },
+            { $sort: { count: -1 } },
+            { $limit: 3 },
+          ])
+          .toArray();
+
+        res.json(top);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
 
     // GET /lessons/:id
     app.get("/lessons/:id", async (req, res) => {
