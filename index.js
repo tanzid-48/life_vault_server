@@ -253,7 +253,7 @@ async function run() {
     });
 
     // GET /lessons/:id
-    app.get("/lessons/:id", async (req, res) => {
+    app.get("/lessons/:id",verifyToken, async (req, res) => {
       try {
         const lesson = await lessonsCollection.findOne({
           _id: new ObjectId(req.params.id),
