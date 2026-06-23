@@ -670,13 +670,20 @@ async function run() {
     );
 
     // GET /admin/lessons — all lessons + report count
+
     app.get("/admin/lessons", verifyToken, verifyAdmin, async (req, res) => {
       try {
-        const { category, accessLevel, isPublic, search } = req.query;
+        const {
+          page = "1",
+          limit = "10",
+          category,
+          accessLevel,
+          search,
+        } = req.query;
+
         const query = {};
         if (category) query.category = category;
         if (accessLevel) query.accessLevel = accessLevel;
-        if (isPublic !== undefined) query.isPublic = isPublic === "true";
         if (search) {
           query.$or = [
             { title: { $regex: search, $options: "i" } },
@@ -684,23 +691,44 @@ async function run() {
           ];
         }
 
-        const lessons = await lessonsCollection
-          .find(query)
-          .sort({ createdAt: -1 })
-          .toArray();
+        const pageNum = Math.max(1, parseInt(page));
+        const limitNum = Math.max(1, parseInt(limit));
+        const skip = (pageNum - 1) * limitNum;
 
-        // each lesson
-        const withReports = await Promise.all(
-          lessons.map(async (l) => {
-            const id = l._id.toString();
-            const reportCount = await reportsCollection.countDocuments({
-              lessonId: id,
-            });
-            return { ...l, reportCount };
-          }),
-        );
-        res.json(withReports);
-      } catch {
+        // report count enrichment — reportsCollection
+        const [lessons, total] = await Promise.all([
+          lessonsCollection
+            .aggregate([
+              { $match: query },
+              { $sort: { createdAt: -1 } },
+              { $skip: skip },
+              { $limit: limitNum },
+              { $addFields: { idStr: { $toString: "$_id" } } },
+              {
+                $lookup: {
+                  from: "reports",
+                  localField: "idStr",
+                  foreignField: "lessonId",
+                  as: "reportsArr",
+                },
+              },
+              {
+                $addFields: { reportCount: { $size: "$reportsArr" } },
+              },
+              { $project: { reportsArr: 0, idStr: 0 } },
+            ])
+            .toArray(),
+          lessonsCollection.countDocuments(query),
+        ]);
+
+        res.json({
+          lessons,
+          total,
+          totalPages: Math.ceil(total / limitNum),
+          page: pageNum,
+        });
+      } catch (err) {
+        console.error(err);
         res.status(500).json({ message: "Server error" });
       }
     });
