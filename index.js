@@ -253,7 +253,7 @@ async function run() {
     });
 
     // GET /lessons/:id
-    app.get("/lessons/:id",async (req, res) => {
+    app.get("/lessons/:id", async (req, res) => {
       try {
         const lesson = await lessonsCollection.findOne({
           _id: new ObjectId(req.params.id),
@@ -267,6 +267,7 @@ async function run() {
     });
     // GET /lessons — paginated + filter
 
+    // GET /lessons
     app.get("/lessons", async (req, res) => {
       try {
         const {
@@ -278,9 +279,14 @@ async function run() {
           accessLevel,
           userId,
           sort,
+          mine,
         } = req.query;
 
-        const query = { isPublic: true };
+        const query = {};
+        if (mine !== "true") {
+          query.isPublic = true;
+        }
+
         if (category) query.category = category;
         if (emotionalTone) query.emotionalTone = emotionalTone;
         if (accessLevel) query.accessLevel = accessLevel;
@@ -293,55 +299,6 @@ async function run() {
           ];
         }
 
-        const pageNum = Math.max(1, parseInt(page) || 1);
-        const limitNum = Math.max(1, parseInt(limit));
-        const skip = (pageNum - 1) * limitNum;
-
-        // sort=mostSaved — favorites collection
-        if (sort === "mostSaved") {
-          const basePipeline = [
-            { $match: query },
-            { $addFields: { idStr: { $toString: "$_id" } } },
-            {
-              $lookup: {
-                from: "favorites",
-                localField: "idStr",
-                foreignField: "lessonId",
-                as: "favoritesArr",
-              },
-            },
-            { $addFields: { favoritesCount: { $size: "$favoritesArr" } } },
-            { $project: { favoritesArr: 0, idStr: 0 } },
-            { $sort: { favoritesCount: -1 } },
-          ];
-
-          const [lessons, countResult] = await Promise.all([
-            lessonsCollection
-              .aggregate([
-                ...basePipeline,
-                { $skip: skip },
-                { $limit: limitNum },
-              ])
-              .toArray(),
-            lessonsCollection
-              .aggregate([{ $match: query }, { $count: "total" }])
-              .toArray(),
-          ]);
-
-          const total = countResult[0]?.total ?? 0;
-
-          if (page) {
-            return res.json({
-              lessons,
-              total,
-              totalPages: Math.ceil(total / limitNum),
-              page: pageNum,
-            });
-          }
-          return res.json(lessons);
-        }
-
-        // ── newest / oldest / popular
         const sortObj =
           sort === "popular"
             ? { views: -1 }
@@ -350,6 +307,9 @@ async function run() {
               : { createdAt: -1 };
 
         if (page) {
+          const pageNum = Math.max(1, parseInt(page));
+          const limitNum = Math.max(1, parseInt(limit));
+          const skip = (pageNum - 1) * limitNum;
           const [lessons, total] = await Promise.all([
             lessonsCollection
               .find(query)
@@ -359,7 +319,6 @@ async function run() {
               .toArray(),
             lessonsCollection.countDocuments(query),
           ]);
-
           return res.json({
             lessons,
             total,
@@ -380,28 +339,24 @@ async function run() {
     });
 
     // PATCH /lessons/:id — update (owner only)
-    app.patch("/lessons/:id", verifyToken, async (req, res) => {
-      try {
-        const lesson = await lessonsCollection.findOne({
-          _id: new ObjectId(req.params.id),
-        });
-        if (!lesson) return res.status(404).json({ message: "Not found" });
+   // server.js - PATCH route update
+app.patch("/lessons/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await lessonsCollection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $set: { ...req.body, updatedAt: new Date() } }, 
+      { returnDocument: "after" }
+    );
 
-        // Only owner can update
-        if (lesson.userId !== req.user._id.toString()) {
-          return res.status(403).json({ message: "Forbidden" });
-        }
+    if (!result) return res.status(404).json({ message: "Lesson not found" });
 
-        const result = await lessonsCollection.findOneAndUpdate(
-          { _id: new ObjectId(req.params.id) },
-          { $set: { ...req.body, updatedAt: new Date() } },
-          { returnDocument: "after" },
-        );
-        res.json({ success: true, lesson: result });
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
+    res.json({ success: true, lesson: result });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
     // DELETE /lessons/:id — owner or admin
     app.delete("/lessons/:id", verifyToken, async (req, res) => {
