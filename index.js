@@ -95,6 +95,11 @@ async function run() {
         _id: new ObjectId(session.userId),
       });
       if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (user.suspended === true) {
+        return res
+          .status(403)
+          .json({ message: "Your account has been suspended." });
+      }
 
       req.user = user;
       next();
@@ -339,24 +344,25 @@ async function run() {
     });
 
     // PATCH /lessons/:id — update (owner only)
-   // server.js - PATCH route update
-app.patch("/lessons/:id", verifyToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const result = await lessonsCollection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      { $set: { ...req.body, updatedAt: new Date() } }, 
-      { returnDocument: "after" }
-    );
+    // server.js - PATCH route update
+    app.patch("/lessons/:id", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
 
-    if (!result) return res.status(404).json({ message: "Lesson not found" });
+        const result = await lessonsCollection.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          { $set: { ...req.body, updatedAt: new Date() } },
+          { returnDocument: "after" },
+        );
 
-    res.json({ success: true, lesson: result });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
-});
+        if (!result)
+          return res.status(404).json({ message: "Lesson not found" });
+
+        res.json({ success: true, lesson: result });
+      } catch (err) {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
 
     // DELETE /lessons/:id — owner or admin
     app.delete("/lessons/:id", verifyToken, async (req, res) => {
